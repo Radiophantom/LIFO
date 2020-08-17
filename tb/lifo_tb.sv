@@ -173,7 +173,7 @@ task automatic data_check();
           temp_data = lifo_data.pop_back();
           if( temp_data !== q_o )
             begin
-              $display( "Data word mismatch %d", $time );
+              $display( "Data word mismatch" );
               $display( "Expected : %h", temp_data );
               $display( "Observed : %h", q_o );
               // $stop();
