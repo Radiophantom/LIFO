@@ -174,9 +174,9 @@ task automatic data_check();
       if( rdreq_i )
         do
           begin
+            temp_data = lifo_data.pop_back();
             -> event2;
             @( posedge clk_i );
-            temp_data = lifo_data.pop_back();
             wait( event1.triggered );
             if( temp_data !== q_o )
               begin
