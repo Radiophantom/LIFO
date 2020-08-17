@@ -22,6 +22,8 @@ logic [AWIDTH : 0]     usedw_o;
 
 logic [DWIDTH - 1 : 0] lifo_data [$];
 
+event event1, event2;
+
 lifo #(
   .DWIDTH  ( DWIDTH  ),
   .AWIDTH  ( AWIDTH  )
@@ -42,17 +44,20 @@ lifo #(
 
 task automatic single_write();
   wait( !full_o );
+  wait( event2.triggered );
   wrreq_i = 1'b1;
   data_i  = $random;
-  lifo_data.push_back( data_i );
   @( posedge clk_i );
+  wait( event2.triggered );
   wrreq_i = 1'b0;
 endtask : single_write
 
 task automatic single_read();
   wait( !empty_o );
+  wait( event2.triggered );
   rdreq_i = 1'b1;
   @( posedge clk_i );
+  wait( event2.triggered );
   rdreq_i = 1'b0;
 endtask : single_read
 
@@ -61,18 +66,17 @@ task automatic write_full_lifo( input bit pause_enable );
     wait( full_o );
     while( 1 )
       begin
+        wait( event2.triggered );
         if( pause_enable )
           wrreq_i = $urandom_range( 1 );
         else
           wrreq_i = 1'b1;
         data_i  = $random;
-        if( wrreq_i )
-          lifo_data.push_back( data_i );
         @( posedge clk_i );
       end
   join_any
   disable write_loop;
-  void'(lifo_data.pop_back());
+  wait( event2.triggered );
   wrreq_i = 1'b0;
 endtask : write_full_lifo
 
@@ -81,6 +85,7 @@ task automatic read_full_lifo( input bit pause_enable );
     wait( empty_o );
     while( 1 )
       begin
+        wait( event2.triggered );
         if( pause_enable )
           rdreq_i = $urandom_range( 1 );
         else
@@ -89,6 +94,7 @@ task automatic read_full_lifo( input bit pause_enable );
       end
   join_any
   disable read_loop;
+  wait( event2.triggered );
   rdreq_i = 1'b0;
 endtask : read_full_lifo
 
@@ -108,87 +114,89 @@ task automatic empty_flag_bound_test();
   single_read();
 endtask : empty_flag_bound_test
 
-int cnt = 0;
 
 task automatic control_signals_check();
+  int cnt = 0;
   forever
-  fork
-    begin
-      @( posedge clk_i );
-      if( wrreq_i )
-        cnt = cnt + 1;
-      else if( rdreq_i )
-        cnt = cnt - 1;
-    end
     begin
       @( posedge clk_i );
       if( cnt !== usedw_o )
         begin
-          $display( "Unexpected usedw value" );
+          $display( "%0t : Unexpected usedw value", $time );
           $display( "Expected : %d", cnt );
           $display( "Observed : %d", usedw_o );
-          // $stop();
+          $stop();
         end
       if( ( cnt == LIFO_DEPTH ) && ( !full_o ) )
         begin
-          $display( "Unexpected full flag behavior" );
+          $display( "%0t : Unexpected full flag behavior", $time );
           $display( "Expected : 1" );
           $display( "Observed : 0" );
-          // $stop();
+          $stop();
         end
       else if( ( cnt !== LIFO_DEPTH ) && full_o )
         begin
-          $display( "Unexpected full flag behavior" );
+          $display( "%0t : Unexpected full flag behavior", $time );
           $display( "Expected : 0" );
           $display( "Observed : 1" );
-          // $stop();
+          $stop();
         end
       if( ( cnt == 0 ) && ( !empty_o ) )
         begin
-          $display( "Unexpected empty flag behavior" );
+          $display( "%0t : Unexpected empty flag behavior", $time );
           $display( "Expected : 1" );
           $display( "Observed : 0" );
-          // $stop();
+          $stop();
         end
       else if( ( cnt !== 0 ) && empty_o )
         begin
-          $display( "Unexpected empty flag behavior" );
+          $display( "%0t : Unexpected empty flag behavior", $time );
           $display( "Expected : 0" );
           $display( "Observed : 1" );
-          // $stop();
+          $stop();
         end
+      if( wrreq_i )
+        cnt = cnt + 1;
+      else if( rdreq_i )
+        cnt = cnt - 1;
+      if( wrreq_i )
+        lifo_data.push_back( data_i );
+      -> event1;
     end
-  join
 endtask : control_signals_check
 
 task automatic data_check();
   logic [DWIDTH - 1 : 0] temp_data;
   forever
     begin
-      wait( rdreq_i );
       @( posedge clk_i );
-      do
-        begin
-          @( posedge clk_i );
-          temp_data = lifo_data.pop_back();
-          if( temp_data !== q_o )
-            begin
-              $display( "Data word mismatch" );
-              $display( "Expected : %h", temp_data );
-              $display( "Observed : %h", q_o );
-              // $stop();
-            end
-          else
-            $display( "Data match : %h - %h ", temp_data, q_o);
-        end
-      while( rdreq_i );
+      wait( event1.triggered );
+      if( rdreq_i )
+        do
+          begin
+            -> event2;
+            @( posedge clk_i );
+            temp_data = lifo_data.pop_back();
+            wait( event1.triggered );
+            if( temp_data !== q_o )
+              begin
+                $display( "%0t : Data word mismatch", $time );
+                $display( "Expected : %h", temp_data );
+                $display( "Observed : %h", q_o );
+                $stop();
+              end
+          end
+        while( rdreq_i );
+      -> event2;
     end
 endtask : data_check
 
 always #5 clk_i = !clk_i;
 
+
 initial
   begin
+    $timeformat( -9, 0, " ns", 20 );
     wrreq_i = 1'b0;
     data_i  = '0;
     rdreq_i = 1'b0;
