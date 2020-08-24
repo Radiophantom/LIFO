@@ -18,9 +18,16 @@ logic [DWIDTH - 1 : 0] data_i;
 logic                  rdreq_i;
 logic [DWIDTH - 1 : 0] q_o;
 
-logic                  empty_o; 
+logic                  empty_o;
 logic                  full_o;
 logic [AWIDTH : 0]     usedw_o;
+
+logic [AWIDTH : 0]     ref_usedw;
+logic [DWIDTH - 1 : 0] ref_data;
+
+always #5 clk_i = !clk_i;
+
+random_scenario scenario;
 
 lifo #(
   .DWIDTH  ( DWIDTH  ),
@@ -42,151 +49,104 @@ lifo #(
 
 logic [DWIDTH - 1 : 0] lifo_data [$];
 
-int   ctrl_cnt = 0;
-
-event ctrl_signals_checked;
-event data_checked;
+task automatic model();
+  ref_usedw  = 0;
+  forever
+    begin
+      @( posedge clk_i );
+      if( rdreq_i )
+        ref_data <= lifo_data.pop_back();
+      if( wrreq_i )
+        lifo_data.push_back( data_i );
+      ref_usedw <= ref_usedw + wrreq_i - rdreq_i;
+    end
+endtask
 
 task automatic write_only();
-
-  if( ctrl_cnt !== LIFO_DEPTH )
-    begin
-      wait( data_checked.triggered );
-      wrreq_i = 1'b1;
-      data_i  = $random;
-      lifo_data.push_back( data_i );
-      @( posedge clk_i );
-      wait( data_checked.triggered );
-      wrreq_i = 1'b0;
-    end
-  else
-    idle();
-
-endtask : write_only
+  @( posedge clk_i );
+  wrreq_i <= ( ref_usedw < ( LIFO_DEPTH - 1 ) ) || ( ( ref_usedw == ( LIFO_DEPTH - 1 ) ) && !wrreq_i );
+  rdreq_i <= 1'b0;
+  data_i  <= $urandom();
+endtask
 
 task automatic read_only();
+  @( posedge clk_i );
+  wrreq_i <= 1'b0;
+  rdreq_i <= ( ref_usedw > 1 ) || ( ( ref_usedw == 1 ) && !rdreq_i );
+  data_i  <= $urandom();
+endtask
 
-  if( ctrl_cnt !== 0 )
-    begin
-      wait( data_checked.triggered );
-      rdreq_i = 1'b1;
-      @( posedge clk_i );
-      wait( data_checked.triggered );
-      rdreq_i = 1'b0;
-    end
-  else
-    idle();
-
-endtask : read_only
+task automatic read_write();
+  @( posedge clk_i );
+  wrreq_i <= ( ref_usedw < ( LIFO_DEPTH - 1 ) ) || ( ( ref_usedw == ( LIFO_DEPTH - 1 ) ) && !wrreq_i );
+  rdreq_i <= ( ref_usedw > 1                  ) || ( ( ref_usedw == 1                  ) && !rdreq_i );
+  data_i  <= $urandom();
+endtask
 
 task automatic idle();
-
   @( posedge clk_i );
+  wrreq_i <= 1'b0;
+  rdreq_i <= 1'b0;
+  data_i  <= $urandom();
+endtask
 
-endtask : idle
 
 task automatic run_tasks_scenario ( input bit [1:0] tasks_scenario[$] );
 
   bit [1:0] current_task;
-  while( tasks_scenario.size() !== 0 )
+  while( tasks_scenario.size() != 0 )
     begin
       current_task = tasks_scenario.pop_front();
-      if( current_task == 0 )
-        idle();
-      else if( current_task == 1 )
-        write_only();
-      else if( current_task == 2 )
-        read_only();
+      case( current_task )
+        2'd0 : idle();
+        2'd1 : write_only();
+        2'd2 : read_only();
+        2'd3 : read_write();
+      endcase
     end
-
+  idle();
 endtask : run_tasks_scenario
 
-task automatic control_signals_check();
 
+task automatic check ();
   forever
     begin
       @( posedge clk_i );
-      if( ctrl_cnt !== usedw_o )
+      if( ( !full_o && ( ref_usedw == LIFO_DEPTH ) ) || ( full_o && ( ref_usedw != LIFO_DEPTH ) ) )
+        begin
+          $display( "%0t : Unexpected full flag behavior", $time );
+          $stop();
+        end
+
+      if( ( !empty_o && ( ref_usedw == 0         ) ) || ( empty_o && ( ref_usedw != 0         ) ) )
+        begin
+          $display( "%0t : Unexpected empty flag behavior", $time );
+          $stop();
+        end
+
+      if( usedw_o != ref_usedw  )
         begin
           $display( "%0t : Unexpected usedw value", $time );
-          $display( "Expected : %d", ctrl_cnt );
-          $display( "Observed : %d", usedw_o );
+          $display( "Expected : %d", ref_usedw );
+          $display( "Observed : %d", usedw_o   );
           $stop();
         end
-      if( ( ctrl_cnt == LIFO_DEPTH ) && ( !full_o ) )
+
+      if( ref_data != q_o )
         begin
-          $display( "%0t : Unexpected full flag behavior", $time );
-          $display( "Expected : 1" );
-          $display( "Observed : 0" );
+          $display( "%0t : Data word mismatch", $time );
+          $display( "Expected : %h", ref_data );
+          $display( "Observed : %h", q_o      );
           $stop();
         end
-      else if( ( ctrl_cnt !== LIFO_DEPTH ) && full_o )
-        begin
-          $display( "%0t : Unexpected full flag behavior", $time );
-          $display( "Expected : 0" );
-          $display( "Observed : 1" );
-          $stop();
-        end
-      if( ( ctrl_cnt == 0 ) && ( !empty_o ) )
-        begin
-          $display( "%0t : Unexpected empty flag behavior", $time );
-          $display( "Expected : 1" );
-          $display( "Observed : 0" );
-          $stop();
-        end
-      else if( ( ctrl_cnt !== 0 ) && empty_o )
-        begin
-          $display( "%0t : Unexpected empty flag behavior", $time );
-          $display( "Expected : 0" );
-          $display( "Observed : 1" );
-          $stop();
-        end
-      if( wrreq_i )
-        ctrl_cnt = ctrl_cnt + 1;
-      else if( rdreq_i )
-        ctrl_cnt = ctrl_cnt - 1;
-      -> ctrl_signals_checked;
     end
+endtask
 
-endtask : control_signals_check
-
-task automatic data_check();
-
-  logic [DWIDTH - 1 : 0] temp_data;
-  forever
-    begin
-      @( posedge clk_i );
-      wait( ctrl_signals_checked.triggered );
-      if( rdreq_i )
-        do
-          begin
-            temp_data = lifo_data.pop_back();
-            -> data_checked;
-            @( posedge clk_i );
-            wait( ctrl_signals_checked.triggered );
-            if( temp_data !== q_o )
-              begin
-                $display( "%0t : Data word mismatch", $time );
-                $display( "Expected : %h", temp_data );
-                $display( "Observed : %h", q_o );
-                $stop();
-              end
-          end
-        while( rdreq_i );
-      -> data_checked;
-    end
-
-endtask : data_check
-
-always #5 clk_i = !clk_i;
-
-random_scenario scenario;
 
 initial
   begin
     $timeformat( -9, 0, " ns", 20 );
     wrreq_i = 1'b0;
-    data_i  = '0;
     rdreq_i = 1'b0;
 
     @( posedge clk_i );
@@ -197,36 +157,36 @@ initial
     repeat(5) @( posedge clk_i );
 
     fork
-      control_signals_check();
-      data_check();
+      model();
+      check();
     join_none;
 
     scenario = new();
     scenario.set_probability(0, 100, 0, 0);
     scenario.get_tasks_scenario( 20 );
-    run_tasks_scenario( scenario.tasks_scenario );
-    repeat(5) @( posedge clk_i );
-
-    scenario = new();
     scenario.set_probability(0, 0, 100, 0);
     scenario.get_tasks_scenario( 20 );
     run_tasks_scenario( scenario.tasks_scenario );
-    repeat(5) @( posedge clk_i );
- 
-    scenario = new(); 
+
+    scenario = new();
     scenario.set_probability(0, 70, 30, 0);
     scenario.get_tasks_scenario( 30 );
     run_tasks_scenario( scenario.tasks_scenario );
-    repeat(5) @( posedge clk_i );
 
-    scenario = new(); 
-    scenario.set_probability(0, 30, 70, 0);
-    scenario.get_tasks_scenario( 30 );
+    scenario = new();
+    scenario.set_probability( 0, 100, 0, 0 );
+    scenario.get_tasks_scenario( 20 );
     run_tasks_scenario( scenario.tasks_scenario );
+
+    scenario = new();
+    scenario.set_probability( 0, 50, 50, 0 );
+    scenario.get_tasks_scenario( 20 );
+    run_tasks_scenario( scenario.tasks_scenario );
+
     repeat(5) @( posedge clk_i );
 
     $display( "Test successfully passed" );
     $stop();
   end
 
-endmodule : lifo_tb
+endmodule
