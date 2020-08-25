@@ -72,4 +72,16 @@ always_ff @( posedge clk_i )
   else if( rdreq_i )
     rd_ptr <= rd_ptr - 1'b1;
 
+always @( posedge clk_i )
+  begin
+    if( wrreq_i )
+      assert( !full_o ) else $error( "prohibited stimulus applied" );
+    if( rdreq_i )
+      assert( !empty_o ) else $fatal( "prohibited stimulus applied" );
+  end
+
+sequence rdreq_seq;
+  @( posedge clk_i ) rdreq_i ##1 ( q_o != 'bX );
+endsequence
+
 endmodule : lifo

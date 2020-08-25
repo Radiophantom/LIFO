@@ -25,9 +25,12 @@ logic [AWIDTH : 0]     usedw_o;
 logic [AWIDTH : 0]     ref_usedw;
 logic [DWIDTH - 1 : 0] ref_data;
 
+logic                  wrreq_allowed;
+logic                  rdreq_allowed;
+
 always #5 clk_i = !clk_i;
 
-random_scenario scenario;
+random_scenario rnd_scenario;
 
 lifo #(
   .DWIDTH  ( DWIDTH  ),
@@ -62,24 +65,26 @@ task automatic model();
     end
 endtask
 
+assign wrreq_allowed = ( ref_usedw < ( LIFO_DEPTH - 1 ) ) || ( ( ref_usedw == ( LIFO_DEPTH - 1 ) ) && !wrreq_i );
+assign rdreq_allowed = ( ref_usedw > 1 ) || ( ( ref_usedw == 1 ) && !rdreq_i );
+
 task automatic write_only();
   @( posedge clk_i );
-  wrreq_i <= ( ref_usedw < ( LIFO_DEPTH - 1 ) ) || ( ( ref_usedw == ( LIFO_DEPTH - 1 ) ) && !wrreq_i );
+  wrreq_i <= wrreq_allowed;
   rdreq_i <= 1'b0;
   data_i  <= $urandom();
 endtask
 
 task automatic read_only();
   @( posedge clk_i );
+  rdreq_i <= rdreq_allowed;
   wrreq_i <= 1'b0;
-  rdreq_i <= ( ref_usedw > 1 ) || ( ( ref_usedw == 1 ) && !rdreq_i );
-  data_i  <= $urandom();
 endtask
 
 task automatic read_write();
   @( posedge clk_i );
-  wrreq_i <= ( ref_usedw < ( LIFO_DEPTH - 1 ) ) || ( ( ref_usedw == ( LIFO_DEPTH - 1 ) ) && !wrreq_i );
-  rdreq_i <= ( ref_usedw > 1                  ) || ( ( ref_usedw == 1                  ) && !rdreq_i );
+  wrreq_i <= wrreq_allowed;
+  rdreq_i <= rdreq_allowed;
   data_i  <= $urandom();
 endtask
 
@@ -87,16 +92,15 @@ task automatic idle();
   @( posedge clk_i );
   wrreq_i <= 1'b0;
   rdreq_i <= 1'b0;
-  data_i  <= $urandom();
 endtask
 
-
-task automatic run_tasks_scenario ( input bit [1:0] tasks_scenario[$] );
-
+task automatic run_tasks_scenario();
+  bit [1:0] scenario [$];
   bit [1:0] current_task;
-  while( tasks_scenario.size() != 0 )
+  rnd_scenario.get_scenario( scenario );
+  while( scenario.size() != 0 )
     begin
-      current_task = tasks_scenario.pop_front();
+      current_task = scenario.pop_front();
       case( current_task )
         2'd0 : idle();
         2'd1 : write_only();
@@ -105,7 +109,7 @@ task automatic run_tasks_scenario ( input bit [1:0] tasks_scenario[$] );
       endcase
     end
   idle();
-endtask : run_tasks_scenario
+endtask
 
 
 task automatic check ();
@@ -118,7 +122,7 @@ task automatic check ();
           $stop();
         end
 
-      if( ( !empty_o && ( ref_usedw == 0         ) ) || ( empty_o && ( ref_usedw != 0         ) ) )
+      if( ( !empty_o && ( ref_usedw == 0 ) ) || ( empty_o && ( ref_usedw != 0 ) ) )
         begin
           $display( "%0t : Unexpected empty flag behavior", $time );
           $stop();
@@ -148,6 +152,7 @@ initial
     $timeformat( -9, 0, " ns", 20 );
     wrreq_i = 1'b0;
     rdreq_i = 1'b0;
+    rnd_scenario = new();
 
     @( posedge clk_i );
     srst_i = 1'b1;
@@ -161,27 +166,23 @@ initial
       check();
     join_none;
 
-    scenario = new();
-    scenario.set_probability(0, 100, 0, 0);
-    scenario.get_tasks_scenario( 20 );
-    scenario.set_probability(0, 0, 100, 0);
-    scenario.get_tasks_scenario( 20 );
-    run_tasks_scenario( scenario.tasks_scenario );
+    rnd_scenario.set_probability(0, 100, 0, 0);
+    rnd_scenario.create_scenario( 20 );
+    rnd_scenario.set_probability(0, 0, 100, 0);
+    rnd_scenario.create_scenario( 20 );
+    run_tasks_scenario();
 
-    scenario = new();
-    scenario.set_probability(0, 70, 30, 0);
-    scenario.get_tasks_scenario( 30 );
-    run_tasks_scenario( scenario.tasks_scenario );
+    rnd_scenario.set_probability(0, 70, 30, 0);
+    rnd_scenario.create_scenario( 30 );
+    run_tasks_scenario();
 
-    scenario = new();
-    scenario.set_probability( 0, 100, 0, 0 );
-    scenario.get_tasks_scenario( 20 );
-    run_tasks_scenario( scenario.tasks_scenario );
+    rnd_scenario.set_probability( 0, 100, 0, 0 );
+    rnd_scenario.create_scenario( 20 );
+    run_tasks_scenario();
 
-    scenario = new();
-    scenario.set_probability( 0, 50, 50, 0 );
-    scenario.get_tasks_scenario( 20 );
-    run_tasks_scenario( scenario.tasks_scenario );
+    rnd_scenario.set_probability( 0, 50, 50, 0 );
+    rnd_scenario.create_scenario( 20 );
+    run_tasks_scenario();
 
     repeat(5) @( posedge clk_i );
 

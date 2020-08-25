@@ -23,22 +23,23 @@ function automatic void set_probability(
   int ro_probability   = 30,
   int rw_probability   = 0
 );
-
   this.idle_probability = idle_probability;
   this.wo_probability   = wo_probability;
   this.ro_probability   = ro_probability;
   this.rw_probability   = rw_probability;
-  
-endfunction : set_probability
+endfunction
 
-task automatic get_tasks_scenario( input int tasks_amount );
-
+task automatic create_scenario( input int tasks_amount );
   repeat( tasks_amount )
     begin
       assert( randomize() );
       tasks_scenario.push_back( task_num );
     end
+endtask
 
-endtask : get_tasks_scenario
+task automatic get_scenario( output bit [1:0] tasks_scenario [$] );
+  tasks_scenario = this.tasks_scenario;
+  this.tasks_scenario.delete();
+endtask
 
-endclass : random_scenario
+endclass
