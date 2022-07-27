@@ -53,20 +53,20 @@ lifo #(
 logic [DWIDTH - 1 : 0] lifo_data [$];
 
 task automatic model();
-  ref_usedw  = 0;
+  ref_usedw = 0;
   forever
     begin
       @( posedge clk_i );
-      if( rdreq_i )
+      ref_usedw <= ref_usedw + ( wrreq_i && lifo_data.size() < LIFO_DEPTH) - ( rdreq_i && lifo_data.size() > 0 );
+      if( rdreq_i && lifo_data.size() > 0)
         ref_data <= lifo_data.pop_back();
-      if( wrreq_i )
+      if( wrreq_i && lifo_data.size() < LIFO_DEPTH)
         lifo_data.push_back( data_i );
-      ref_usedw <= ref_usedw + wrreq_i - rdreq_i;
     end
 endtask
 
-assign wrreq_allowed = ( ref_usedw < ( LIFO_DEPTH - 1 ) ) || ( ( ref_usedw == ( LIFO_DEPTH - 1 ) ) && !wrreq_i );
-assign rdreq_allowed = ( ref_usedw > 1 ) || ( ( ref_usedw == 1 ) && !rdreq_i );
+assign wrreq_allowed = ( ref_usedw < ( LIFO_DEPTH - 1 ) ) || ( ( ref_usedw == ( LIFO_DEPTH - 1 ) ));
+assign rdreq_allowed = ( ref_usedw > 1 ) || ( ( ref_usedw == 1 ));
 
 task automatic write_only();
   @( posedge clk_i );
