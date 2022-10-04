@@ -68,7 +68,9 @@ always_ff @( posedge clk_i )
   if( srst_i )
     usedw <= '0;
   else
-    case( {wrreq,rdreq} )
+    // Bug injection !!!
+    // No 'overflow'/'underrun' protection
+    case( {wrreq_i,rdreq_i} )
       2'b10:
         begin
           usedw <= usedw + 1'b1;
@@ -93,7 +95,9 @@ always_ff @( posedge clk_i )
 
 always_ff @( posedge clk_i )
   if( srst_i )
-    empty <= 1'b1;
+    // Bug injection !!!
+    // Must be 1'b1 after reset!
+    empty <= 1'b0;
   else
     if( wrreq_i )
       empty <= 1'b0;
@@ -131,7 +135,10 @@ always_ff @( posedge clk_i )
 
       2'b01:
         begin
-          almost_empty <= ( usedw <= ALMOST_EMPTY + 1 );
+          // Bug injection !!!
+          // Must be:
+          // almost_empty <= ( usedw <= ALMOST_EMPTY + 1 );
+          almost_empty <= ( usedw < ALMOST_EMPTY + 1 );
         end
 
       default: almost_empty <= almost_empty;
@@ -141,12 +148,27 @@ always_ff @( posedge clk_i )
 always_ff @( posedge clk_i )
   begin
     if( wrreq && rdreq )
-      mem[wr_ptr-1] <= data_i;
+      begin
+        // Bug injection !!!
+        // Simultaneous 'write' and 'read' request, when
+        // only 1 word left in LIFO, mask new input data.
+        if( usedw == 1 )
+          mem[wr_ptr-1] <= mem[wr_ptr-1];
+        else
+          mem[wr_ptr-1] <= data_i;
+      end
     else
       if( wrreq )
         mem[wr_ptr] <= data_i;
     if( rdreq )
-      q <= mem[rd_ptr];
+      // Bug injection !!!
+      // Simultaneous 'read' and 'write' request, when
+      // LIFO is almost-full (only 1 word left),
+      // returns old data.
+      if( wrreq && usedw == ( LIFO_DEPTH - 1 ) )
+        q <= mem[rd_ptr-1];
+      else
+        q <= mem[rd_ptr];
   end
 
 always_ff @( posedge clk_i )
@@ -156,7 +178,12 @@ always_ff @( posedge clk_i )
     case( {wrreq,rdreq} )
       2'b10:
         begin
-          wr_ptr <= wr_ptr + 1'b1;
+          // Bug injection !!!
+          // If no 'idle' ticks passed after
+          // LIFO has begun empty, then immediate writing
+          // cause pointer reference error.
+          if( !(rdreq_d == 1'b1 && empty_o) )
+            wr_ptr <= wr_ptr + 1'b1;
         end
 
       2'b01:
@@ -179,7 +206,12 @@ always_ff @( posedge clk_i )
 
       2'b01:
         begin
-          rd_ptr <= rd_ptr - 1'b1;
+          // Bug injection !!!
+          // If no 'idle' ticks passed after
+          // LIFO has begun full, then immediate writing
+          // cause pointer reference error.
+          if( !(wrreq_d == 1'b1 && full_o) )
+            rd_ptr <= rd_ptr - 1'b1;
         end
 
       default: rd_ptr <= rd_ptr;

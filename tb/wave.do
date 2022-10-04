@@ -9,8 +9,10 @@ add wave -noupdate /lifo_tb/q_o
 add wave -noupdate /lifo_tb/empty_o
 add wave -noupdate /lifo_tb/full_o
 add wave -noupdate -radix unsigned /lifo_tb/usedw_o
+add wave -noupdate /lifo_tb/lifo/almost_empty_o
+add wave -noupdate /lifo_tb/lifo/almost_full_o
 TreeUpdate [SetDefaultTree]
-WaveRestoreCursors {{Cursor 1} {15000 ps} 0}
+WaveRestoreCursors {{Cursor 1} {1136481 ps} 0}
 quietly wave cursor active 1
 configure wave -namecolwidth 150
 configure wave -valuecolwidth 100
@@ -26,4 +28,4 @@ configure wave -griddelta 40
 configure wave -timeline 0
 configure wave -timelineunits ns
 update
-WaveRestoreZoom {0 ps} {199500 ps}
+WaveRestoreZoom {0 ps} {1328250 ps}

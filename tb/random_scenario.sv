@@ -3,7 +3,7 @@ class random_scenario;
 int idle_probability;
 int wo_probability;
 int ro_probability;
-int rw_probability; // rw_probability should be 0, when lifo is testing
+int rw_probability;
 
 rand bit [1:0] task_num;
 constraint task_num_constraint {
@@ -21,7 +21,7 @@ function automatic void set_probability(
   int idle_probability = 30,
   int wo_probability   = 30,
   int ro_probability   = 30,
-  int rw_probability   = 0
+  int rw_probability   = 30
 );
   this.idle_probability = idle_probability;
   this.wo_probability   = wo_probability;
